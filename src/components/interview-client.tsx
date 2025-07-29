@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { BrainCircuit, Loader2, Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react';
+import { BrainCircuit, Camera, Loader2, Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -9,7 +10,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { generateInterviewQuestion } from '@/ai/flows/generate-interview-question';
 import { evaluateCodeSolution } from '@/ai/flows/evaluate-code-solution';
+import { analyzeFacialExpression } from '@/ai/flows/analyze-facial-expression';
+import { generateInterviewReport, GenerateInterviewReportOutput } from '@/ai/flows/generate-interview-report';
 import { AiAvatar } from '@/components/ai-avatar';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from './ui/badge';
 
 type Round = "Technical" | "Coding" | "HR";
 const ROUNDS: Round[] = ["Technical", "Coding", "HR"];
@@ -26,13 +31,17 @@ export function InterviewClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState<{ correct: boolean, feedback: string, score: number } | null>(null);
+  const [report, setReport] = useState<GenerateInterviewReportOutput | null>(null);
 
   const [isMicOn, setIsMicOn] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isTTSEnabled, setIsTTSEnabled] = useState(true);
+  const [expressionAnalyses, setExpressionAnalyses] = useState<string[]>([]);
+  const [isAnalyzingExpression, setIsAnalyzingExpression] = useState(false);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
 
   const speak = useCallback((text: string) => {
@@ -60,13 +69,12 @@ export function InterviewClient() {
     return () => clearInterval(interval);
   }, [speak]);
 
-  const getNextQuestion = useCallback(async () => {
+  const getNextQuestion = useCallback(async (currentHistory: typeof history) => {
     setIsLoading(true);
     setEvaluationResult(null);
     try {
-      const lastAnswer = history.length > 0 ? history[history.length - 1].answer : "Let's begin the interview.";
       const res = await generateInterviewQuestion({
-        previousAnswer: lastAnswer,
+        history: currentHistory,
         interviewRound: round,
         userRole: USER_ROLE,
       });
@@ -79,26 +87,65 @@ export function InterviewClient() {
     } finally {
       setIsLoading(false);
     }
-  }, [round, history, toast, startTypingEffect]);
+  }, [round, toast, startTypingEffect]);
 
-  const handleNextPhase = useCallback(() => {
+  const handleFinish = useCallback(async () => {
+    setIsLoading(true);
+    setIsFinished(true);
+    try {
+      const res = await generateInterviewReport({
+        history,
+        userRole: USER_ROLE,
+        expressionAnalysis: expressionAnalyses,
+      });
+      setReport(res);
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Report Error", description: "Could not generate the final report.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [history, USER_ROLE, expressionAnalyses, toast]);
+
+  const handleNextPhase = useCallback(async (currentHistory: typeof history) => {
     if (questionCount + 1 >= QUESTIONS_PER_ROUND[round]) {
       const currentRoundIndex = ROUNDS.indexOf(round);
       if (currentRoundIndex + 1 < ROUNDS.length) {
         setRound(ROUNDS[currentRoundIndex + 1]);
         setQuestionCount(0);
       } else {
-        setIsFinished(true);
+        await handleFinish();
       }
     } else {
       setQuestionCount(prev => prev + 1);
+      await getNextQuestion(currentHistory);
     }
-  }, [questionCount, round]);
+  }, [questionCount, round, getNextQuestion, handleFinish]);
+  
+  useEffect(() => {
+    if(!isFinished) {
+      getNextQuestion(history);
+    }
+  }, [round, isFinished]);
+
+
+  const setupWebcam = useCallback(() => {
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      })
+      .catch(err => {
+        console.error("Webcam error:", err);
+        toast({ title: "Webcam Error", description: "Could not access your webcam. Facial analysis will be disabled.", variant: "destructive" });
+      });
+  }, [toast]);
 
   useEffect(() => {
-    getNextQuestion();
-  }, [round]);
-
+    setupWebcam();
+  }, [setupWebcam]);
+  
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window)) {
         toast({ title: "Compatibility Error", description: "Speech recognition is not supported in your browser.", variant: "destructive" });
@@ -113,20 +160,17 @@ export function InterviewClient() {
     recognition.lang = 'en-US';
 
     recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
+    recognition.onend = () => { setIsListening(false); setIsMicOn(false); };
     recognition.onerror = (event) => {
       console.error('Speech recognition error', event.error);
       toast({ title: "Mic Error", description: `An error occurred: ${event.error}`, variant: "destructive" });
     };
 
     recognition.onresult = (event) => {
-        let interimTranscript = '';
         let finalTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
                 finalTranscript += event.results[i][0].transcript;
-            } else {
-                interimTranscript += event.results[i][0].transcript;
             }
         }
         setUserAnswer(prev => prev + finalTranscript);
@@ -141,6 +185,30 @@ export function InterviewClient() {
     }
     setIsMicOn(!isMicOn);
   };
+
+  const captureAndAnalyzeExpression = useCallback(async () => {
+    if (!videoRef.current || !videoRef.current.srcObject) return;
+    setIsAnalyzingExpression(true);
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    const dataUri = canvas.toDataURL('image/jpeg');
+
+    try {
+      const { feedback } = await analyzeFacialExpression({ photoDataUri: dataUri });
+      setExpressionAnalyses(prev => [...prev, feedback]);
+      toast({ title: "Expression Feedback", description: feedback });
+    } catch (error) {
+      console.error("Expression analysis error:", error);
+      toast({ title: "Analysis Error", description: "Could not analyze expression.", variant: "destructive" });
+    } finally {
+      setIsAnalyzingExpression(false);
+    }
+  }, [toast]);
   
   const handleSubmit = async () => {
     if (!userAnswer.trim()) {
@@ -151,7 +219,7 @@ export function InterviewClient() {
 
     const newHistory = [...history, { question: currentQuestion, answer: userAnswer }];
     setHistory(newHistory);
-
+    
     if (round === "Coding") {
         try {
             const result = await evaluateCodeSolution({ code: userAnswer, problemDescription: currentQuestion });
@@ -160,38 +228,57 @@ export function InterviewClient() {
             console.error(error);
             toast({ title: "Evaluation Error", description: "Could not evaluate your solution.", variant: "destructive" });
         } finally {
-            setIsLoading(false);
             setUserAnswer('');
-            // After evaluation, we let user see feedback, then they can click to continue
+            // After evaluation, let user see feedback, then they can click to continue
         }
     } else {
         setUserAnswer('');
-        handleNextPhase();
-        if(!isFinished) {
-            await getNextQuestion();
-        }
+        await handleNextPhase(newHistory);
     }
     setIsLoading(false);
   };
   
-  const progress = (ROUNDS.indexOf(round) / ROUNDS.length) * 100 + ((questionCount + 1) / QUESTIONS_PER_ROUND[round]) * (100 / ROUNDS.length);
+  const totalRounds = ROUNDS.length;
+  const currentRoundIndex = ROUNDS.indexOf(round);
+  const questionsInCurrentRound = QUESTIONS_PER_ROUND[round];
+  const progress = (currentRoundIndex / totalRounds) * 100 + ((questionCount) / questionsInCurrentRound) * (100 / totalRounds);
 
   if (isFinished) {
     return (
-      <div className="flex h-screen w-full flex-col items-center justify-center bg-background p-8">
-        <Card className="w-full max-w-2xl">
+      <div className="flex min-h-screen w-full flex-col items-center justify-center bg-background p-4 sm:p-8">
+        <Card className="w-full max-w-3xl">
           <CardHeader>
             <CardTitle className="text-center text-3xl text-primary">Interview Complete!</CardTitle>
-            <CardDescription className="text-center">Thank you for your time. Here is a summary of your interview.</CardDescription>
+            <CardDescription className="text-center">Thank you for your time. Here is your performance report.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {history.map((item, index) => (
-              <div key={index}>
-                <p className="font-semibold">Q: {item.question}</p>
-                <p className="text-muted-foreground pl-4">A: {item.answer}</p>
+          <CardContent className="space-y-6">
+            {isLoading && !report && <div className="flex justify-center items-center gap-2"><Loader2 className="animate-spin" /> <p>Generating your report...</p></div>}
+            {report && (
+              <div className="space-y-4 text-left">
+                <Alert>
+                  <AlertTitle>Overall Assessment</AlertTitle>
+                  <AlertDescription>{report.overallAssessment}</AlertDescription>
+                </Alert>
+
+                <div>
+                    <h3 className="font-semibold mb-2">Strengths</h3>
+                    <div className="flex flex-wrap gap-2">
+                        {report.strengths.map((strength, i) => <Badge key={i} variant="secondary">{strength}</Badge>)}
+                    </div>
+                </div>
+
+                <div>
+                    <h3 className="font-semibold mb-2">Areas for Improvement</h3>
+                    <div className="flex flex-wrap gap-2">
+                        {report.areasForImprovement.map((area, i) => <Badge key={i} variant="destructive">{area}</Badge>)}
+                    </div>
+                </div>
               </div>
-            ))}
+            )}
           </CardContent>
+          <CardFooter>
+            <Button onClick={() => window.location.href = '/'} className="w-full">Start Over</Button>
+          </CardFooter>
         </Card>
       </div>
     );
@@ -204,7 +291,12 @@ export function InterviewClient() {
             <BrainCircuit className="h-8 w-8 text-primary" />
             <h2 className="text-2xl font-bold text-primary font-headline">Elysian AI</h2>
         </div>
-        <AiAvatar isSpeaking={isSpeaking} isThinking={isLoading} />
+        
+        <div className="relative">
+          <AiAvatar isSpeaking={isSpeaking} isThinking={isLoading} />
+          <video ref={videoRef} autoPlay playsInline muted className="absolute top-0 left-0 w-full h-full rounded-full object-cover opacity-20 pointer-events-none"></video>
+        </div>
+
         <div className="w-full space-y-2">
             <p className="text-center text-sm font-medium text-muted-foreground">{round} Round ({questionCount + 1}/{QUESTIONS_PER_ROUND[round]})</p>
             <Progress value={progress} />
@@ -216,6 +308,9 @@ export function InterviewClient() {
             <Button variant={isTTSEnabled ? "default" : "outline"} size="icon" onClick={() => setIsTTSEnabled(!isTTSEnabled)}>
               {isTTSEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
             </Button>
+             <Button variant="outline" size="icon" onClick={captureAndAnalyzeExpression} disabled={isAnalyzingExpression}>
+              {isAnalyzingExpression ? <Loader2 className="h-5 w-5 animate-spin"/> : <Camera className="h-5 w-5" />}
+            </Button>
         </div>
         <p className={`text-sm text-muted-foreground mt-2 transition-opacity ${isListening ? 'opacity-100' : 'opacity-0'}`}>Listening...</p>
       </aside>
@@ -223,7 +318,7 @@ export function InterviewClient() {
         <div className="flex-1 flex items-center justify-center">
         <Card className="w-full max-w-3xl">
           <CardHeader>
-            <CardTitle>Question {questionCount + 1}</CardTitle>
+            <CardTitle>Question {ROUNDS.indexOf(round) * QUESTIONS_PER_ROUND[ROUNDS[ROUNDS.indexOf(round)]] + questionCount + 1}</CardTitle>
             <CardDescription className="min-h-[60px] text-lg text-foreground pt-2">
                 {displayedQuestion}
                 {isLoading && !displayedQuestion && <span className="animate-pulse">Thinking...</span>}
@@ -241,15 +336,18 @@ export function InterviewClient() {
           </CardContent>
           <CardFooter className="flex justify-end">
             {evaluationResult ? (
-                <div className="w-full text-left">
-                  <p className="font-bold">Evaluation:</p>
-                  <p><span className="font-semibold">Correct:</span> {evaluationResult.correct ? "Yes" : "No"}</p>
-                  <p><span className="font-semibold">Score:</span> {evaluationResult.score}/100</p>
-                  <p><span className="font-semibold">Feedback:</span> {evaluationResult.feedback}</p>
-                  <Button onClick={handleNextPhase} className="mt-4">Continue to Next Round</Button>
+                <div className="w-full text-left space-y-3">
+                  <Alert variant={evaluationResult.correct ? "default" : "destructive"}>
+                    <AlertTitle>Evaluation Result</AlertTitle>
+                    <AlertDescription>
+                      <p><span className="font-semibold">Score:</span> {evaluationResult.score}/100</p>
+                      <p>{evaluationResult.feedback}</p>
+                    </AlertDescription>
+                  </Alert>
+                  <Button onClick={() => handleNextPhase(history)} className="mt-4">Continue</Button>
                 </div>
             ) : (
-                <Button onClick={handleSubmit} disabled={isLoading}>
+                <Button onClick={handleSubmit} disabled={isLoading || isAnalyzingExpression}>
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                     Submit {round === 'Coding' ? 'Solution' : 'Answer'}
                 </Button>
