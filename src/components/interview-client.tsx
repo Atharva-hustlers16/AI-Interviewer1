@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { BrainCircuit, Camera, Loader2, Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react';
+import { BrainCircuit, Loader2, Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -228,7 +228,7 @@ export function InterviewClient() {
 
   const captureAndAnalyzeExpression = useCallback(async () => {
     if (!videoRef.current || !videoRef.current.srcObject || !hasCameraPermission) {
-      toast({ title: "Camera Not Ready", description: "Cannot analyze expression without camera permission.", variant: "destructive" });
+      console.log("Camera not ready for expression analysis.");
       return;
     };
     setIsAnalyzingExpression(true);
@@ -237,17 +237,20 @@ export function InterviewClient() {
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+        setIsAnalyzingExpression(false);
+        return;
+    }
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
     const dataUri = canvas.toDataURL('image/jpeg');
 
     try {
       const { feedback } = await analyzeFacialExpression({ photoDataUri: dataUri });
       setExpressionAnalyses(prev => [...prev, feedback]);
-      toast({ title: "Expression Feedback", description: feedback });
+      toast({ title: "Expression Feedback", description: feedback, duration: 2000 });
     } catch (error) {
       console.error("Expression analysis error:", error);
-      toast({ title: "Analysis Error", description: "Could not analyze expression.", variant: "destructive" });
+      // Silently fail for now to not distract user
     } finally {
       setIsAnalyzingExpression(false);
     }
@@ -259,6 +262,9 @@ export function InterviewClient() {
       return;
     }
     setIsLoading(true);
+
+    // Capture expression before moving on
+    await captureAndAnalyzeExpression();
 
     const newHistory = [...history, { question: currentQuestion, answer: userAnswer }];
     setHistory(newHistory);
@@ -366,9 +372,6 @@ export function InterviewClient() {
             <Button variant={isTTSEnabled ? "default" : "outline"} size="icon" onClick={() => setIsTTSEnabled(!isTTSEnabled)}>
               {isTTSEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
             </Button>
-             <Button variant="outline" size="icon" onClick={captureAndAnalyzeExpression} disabled={isAnalyzingExpression || !hasCameraPermission}>
-              {isAnalyzingExpression ? <Loader2 className="h-5 w-5 animate-spin"/> : <Camera className="h-5 w-5" />}
-            </Button>
         </div>
         <p className={`text-sm text-muted-foreground mt-2 transition-opacity ${isListening ? 'opacity-100' : 'opacity-0'}`}>Listening...</p>
       </aside>
@@ -406,7 +409,7 @@ export function InterviewClient() {
                 </div>
             ) : (
                 <Button onClick={handleSubmit} disabled={isLoading || isAnalyzingExpression || isListening || isSpeaking || !userAnswer.trim()}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                    {isLoading || isAnalyzingExpression ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                     Submit {round === 'Coding' ? 'Solution' : 'Answer'}
                 </Button>
             )}
@@ -417,3 +420,5 @@ export function InterviewClient() {
     </div>
   );
 }
+
+    
