@@ -33,6 +33,7 @@ export function InterviewClient() {
   const [isFinished, setIsFinished] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState<{ correct: boolean, feedback: string, score: number } | null>(null);
   const [report, setReport] = useState<GenerateInterviewReportOutput | null>(null);
+  const [hasCameraPermission, setHasCameraPermission] = useState(true);
 
   const [isMicOn, setIsMicOn] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -49,6 +50,7 @@ export function InterviewClient() {
   const speak = useCallback(async (text: string) => {
     if (!isTTSEnabled) return;
     
+    setIsLoading(true);
     try {
       setIsSpeaking(true);
       const { audioDataUri } = await textToSpeech(text);
@@ -60,21 +62,26 @@ export function InterviewClient() {
       console.error('TTS Error:', error);
       toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive" });
       setIsSpeaking(false);
+    } finally {
+        setIsLoading(false);
     }
   }, [isTTSEnabled, toast]);
   
   const startTypingEffect = useCallback((text: string) => {
     setDisplayedQuestion('');
     let i = 0;
-    const interval = setInterval(() => {
-        setDisplayedQuestion(prev => prev + (text[i] || ''));
-        i++;
-        if (i >= text.length) {
-            clearInterval(interval);
-            speak(text);
-        }
+    const intervalId = setInterval(() => {
+        setDisplayedQuestion(prev => {
+            const nextChar = text[i];
+            i++;
+            if (i >= text.length) {
+                clearInterval(intervalId);
+                speak(text);
+            }
+            return prev + (nextChar || '');
+        });
     }, 30);
-    return () => clearInterval(interval);
+    return () => clearInterval(intervalId);
   }, [speak]);
 
   const getNextQuestion = useCallback(async (currentHistory: typeof history) => {
@@ -126,36 +133,54 @@ export function InterviewClient() {
       }
     } else {
       setQuestionCount(prev => prev + 1);
-      await getNextQuestion(currentHistory);
+      // getNextQuestion will be called by the useEffect watching `round` and `questionCount`
     }
-  }, [questionCount, round, getNextQuestion, handleFinish]);
+  }, [questionCount, round, handleFinish]);
   
   useEffect(() => {
     if(!isFinished) {
       getNextQuestion(history);
     }
-  }, [round, isFinished]);
+  // Omitting getNextQuestion and history from deps to prevent re-triggering on every interaction
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [round, questionCount, isFinished]);
 
 
-  const setupWebcam = useCallback(() => {
-    navigator.mediaDevices.getUserMedia({ video: true })
-      .then(stream => {
+  useEffect(() => {
+    const getCameraPermission = async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setHasCameraPermission(false);
+        toast({
+          variant: "destructive",
+          title: "Camera Not Supported",
+          description: "Your browser does not support camera access.",
+        });
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        setHasCameraPermission(true);
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
-      })
-      .catch(err => {
-        console.error("Webcam error:", err);
-        toast({ title: "Webcam Error", description: "Could not access your webcam. Facial analysis will be disabled.", variant: "destructive" });
-      });
-  }, [toast]);
+      } catch (error) {
+        console.error("Error accessing camera:", error);
+        setHasCameraPermission(false);
+        toast({
+          variant: "destructive",
+          title: "Camera Access Denied",
+          description: "Please enable camera permissions in your browser settings to use this feature.",
+        });
+      }
+    };
 
-  useEffect(() => {
-    setupWebcam();
+    getCameraPermission();
+
     if (audioRef.current) {
       audioRef.current.onended = () => setIsSpeaking(false);
     }
-  }, [setupWebcam]);
+  }, [toast]);
   
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window)) {
@@ -179,9 +204,12 @@ export function InterviewClient() {
 
     recognition.onresult = (event) => {
         let finalTranscript = '';
+        let interimTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
                 finalTranscript += event.results[i][0].transcript;
+            } else {
+                interimTranscript += event.results[i][0].transcript;
             }
         }
         setUserAnswer(prev => prev + finalTranscript);
@@ -192,13 +220,17 @@ export function InterviewClient() {
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
+      setUserAnswer(''); // Clear previous answer
       recognitionRef.current?.start();
     }
     setIsMicOn(!isMicOn);
   };
 
   const captureAndAnalyzeExpression = useCallback(async () => {
-    if (!videoRef.current || !videoRef.current.srcObject) return;
+    if (!videoRef.current || !videoRef.current.srcObject || !hasCameraPermission) {
+      toast({ title: "Camera Not Ready", description: "Cannot analyze expression without camera permission.", variant: "destructive" });
+      return;
+    };
     setIsAnalyzingExpression(true);
     
     const canvas = document.createElement('canvas');
@@ -219,7 +251,7 @@ export function InterviewClient() {
     } finally {
       setIsAnalyzingExpression(false);
     }
-  }, [toast]);
+  }, [toast, hasCameraPermission]);
   
   const handleSubmit = async () => {
     if (!userAnswer.trim()) {
@@ -230,24 +262,28 @@ export function InterviewClient() {
 
     const newHistory = [...history, { question: currentQuestion, answer: userAnswer }];
     setHistory(newHistory);
+    setUserAnswer('');
     
     if (round === "Coding") {
         try {
             const result = await evaluateCodeSolution({ code: userAnswer, problemDescription: currentQuestion });
             setEvaluationResult(result);
+            // After evaluation, user sees feedback, then clicks a button to continue.
         } catch (error) {
             console.error(error);
             toast({ title: "Evaluation Error", description: "Could not evaluate your solution.", variant: "destructive" });
         } finally {
-            setUserAnswer('');
-            // After evaluation, let user see feedback, then they can click to continue
+            setIsLoading(false);
         }
     } else {
-        setUserAnswer('');
         await handleNextPhase(newHistory);
+        setIsLoading(false);
     }
-    setIsLoading(false);
   };
+
+  const handleContinueAfterFeedback = async () => {
+    await handleNextPhase(history);
+  }
   
   const totalRounds = ROUNDS.length;
   const currentRoundIndex = ROUNDS.indexOf(round);
@@ -296,31 +332,41 @@ export function InterviewClient() {
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col md:flex-row bg-gray-50 dark:bg-gray-900">
+    <div className="flex min-h-screen w-full flex-col md:flex-row bg-background dark:bg-gray-900">
       <audio ref={audioRef} className="hidden" />
-      <aside className="w-full md:w-1/3 lg:w-1/4 p-8 bg-card border-r flex flex-col items-center justify-center gap-6">
+      <aside className="w-full md:w-1/3 lg:w-1/4 p-4 md:p-8 bg-card border-r flex flex-col items-center justify-center gap-6">
         <div className="flex items-center gap-2">
             <BrainCircuit className="h-8 w-8 text-primary" />
             <h2 className="text-2xl font-bold text-primary font-headline">Elysian AI</h2>
         </div>
         
         <div className="relative">
-          <AiAvatar isSpeaking={isSpeaking} isThinking={isLoading} />
-          <video ref={videoRef} autoPlay playsInline muted className="absolute top-0 left-0 w-full h-full rounded-full object-cover opacity-20 pointer-events-none"></video>
+          <AiAvatar isSpeaking={isSpeaking} isThinking={isLoading && !isSpeaking} />
+          <div className="absolute top-0 left-0 w-full h-full rounded-full overflow-hidden">
+            <video ref={videoRef} autoPlay playsInline muted className={cn("w-full h-full object-cover transition-opacity", hasCameraPermission ? 'opacity-20' : 'opacity-0')}></video>
+          </div>
         </div>
 
         <div className="w-full space-y-2">
             <p className="text-center text-sm font-medium text-muted-foreground">{round} Round ({questionCount + 1}/{QUESTIONS_PER_ROUND[round]})</p>
             <Progress value={progress} />
         </div>
+        {!hasCameraPermission && (
+            <Alert variant="destructive">
+              <AlertTitle>Camera Access Required</AlertTitle>
+              <AlertDescription>
+                Please allow camera access to use this feature.
+              </AlertDescription>
+            </Alert>
+        )}
         <div className="flex gap-2 mt-4">
-            <Button variant={isMicOn ? "default" : "outline"} size="icon" onClick={toggleMic} disabled={isSpeaking}>
+            <Button variant={isMicOn ? "destructive" : "outline"} size="icon" onClick={toggleMic} disabled={isSpeaking || isLoading}>
               {isMicOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
             </Button>
             <Button variant={isTTSEnabled ? "default" : "outline"} size="icon" onClick={() => setIsTTSEnabled(!isTTSEnabled)}>
               {isTTSEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
             </Button>
-             <Button variant="outline" size="icon" onClick={captureAndAnalyzeExpression} disabled={isAnalyzingExpression}>
+             <Button variant="outline" size="icon" onClick={captureAndAnalyzeExpression} disabled={isAnalyzingExpression || !hasCameraPermission}>
               {isAnalyzingExpression ? <Loader2 className="h-5 w-5 animate-spin"/> : <Camera className="h-5 w-5" />}
             </Button>
         </div>
@@ -328,9 +374,9 @@ export function InterviewClient() {
       </aside>
       <main className="flex-1 p-4 md:p-8 flex flex-col">
         <div className="flex-1 flex items-center justify-center">
-        <Card className="w-full max-w-3xl">
+        <Card className="w-full max-w-3xl shadow-lg">
           <CardHeader>
-            <CardTitle>Question {ROUNDS.indexOf(round) * QUESTIONS_PER_ROUND[ROUNDS[ROUNDS.indexOf(round)]] + questionCount + 1}</CardTitle>
+            <CardTitle>Question {currentRoundIndex * 2 + questionCount + 1}</CardTitle>
             <CardDescription className="min-h-[60px] text-lg text-foreground pt-2">
                 {displayedQuestion}
                 {isLoading && !displayedQuestion && <span className="animate-pulse">Thinking...</span>}
@@ -342,11 +388,11 @@ export function InterviewClient() {
               value={userAnswer}
               onChange={(e) => setUserAnswer(e.target.value)}
               rows={round === 'Coding' ? 15 : 5}
-              className={`w-full text-base ${round === 'Coding' ? 'font-code bg-gray-800 text-gray-50 dark:bg-black' : ''}`}
-              disabled={isLoading || isListening}
+              className={`w-full text-base ${round === 'Coding' ? 'font-code bg-gray-900 text-gray-50 dark:bg-black' : ''}`}
+              disabled={isLoading || isListening || isSpeaking}
             />
           </CardContent>
-          <CardFooter className="flex justify-end">
+          <CardFooter className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-4">
             {evaluationResult ? (
                 <div className="w-full text-left space-y-3">
                   <Alert variant={evaluationResult.correct ? "default" : "destructive"}>
@@ -356,10 +402,10 @@ export function InterviewClient() {
                       <p>{evaluationResult.feedback}</p>
                     </AlertDescription>
                   </Alert>
-                  <Button onClick={() => handleNextPhase(history)} className="mt-4">Continue</Button>
+                  <Button onClick={handleContinueAfterFeedback} className="w-full sm:w-auto">Continue</Button>
                 </div>
             ) : (
-                <Button onClick={handleSubmit} disabled={isLoading || isAnalyzingExpression}>
+                <Button onClick={handleSubmit} disabled={isLoading || isAnalyzingExpression || isListening || isSpeaking || !userAnswer.trim()}>
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                     Submit {round === 'Coding' ? 'Solution' : 'Answer'}
                 </Button>

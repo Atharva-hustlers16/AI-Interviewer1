@@ -12,7 +12,7 @@ export function AiAvatar({ isSpeaking, isThinking }: AiAvatarProps) {
     <div
       className={cn(
         "relative h-40 w-40 rounded-full bg-primary/10 flex items-center justify-center transition-all duration-300",
-        (isSpeaking || isThinking) && "bg-primary/20"
+        (isSpeaking || isThinking) && "bg-primary/20 scale-105"
       )}
     >
       <div
