@@ -26,6 +26,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { Skeleton } from "./ui/skeleton";
 
 const formSchema = z.object({
@@ -40,12 +41,20 @@ const formSchema = z.object({
 export function LoginCard() {
   const router = useRouter();
   const { toast } = useToast();
+  const { user, signup, login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoginView, setIsLoginView] = useState(true);
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      router.push("/interview");
+    }
+  }, [user, router]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -55,20 +64,33 @@ export function LoginCard() {
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      // In a real app, you'd verify credentials here.
-      // For this mock, we'll just log the user in.
-      console.log(values);
+    try {
+      if (isLoginView) {
+        await login(values.email, values.password);
+        toast({
+          title: "Login Successful",
+          description: "Redirecting to your interview...",
+        });
+        router.push("/interview");
+      } else {
+        await signup(values.email, values.password);
+        toast({
+          title: "Signup Successful",
+          description: "Redirecting to your interview...",
+        });
+        router.push("/interview");
+      }
+    } catch (error: any) {
       toast({
-        title: "Login Successful",
-        description: "Redirecting to your interview...",
+        title: "Authentication Error",
+        description: error.message,
+        variant: "destructive",
       });
-      router.push("/interview");
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   }
 
   if (!isClient) {
@@ -78,8 +100,8 @@ export function LoginCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Master Login</CardTitle>
-        <CardDescription>Enter your credentials to begin the interview process.</CardDescription>
+        <CardTitle>{isLoginView ? 'Welcome Back' : 'Create an Account'}</CardTitle>
+        <CardDescription>{isLoginView ? 'Enter your credentials to access your interview.' : 'Sign up to begin your AI-powered interview experience.'}</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -111,10 +133,13 @@ export function LoginCard() {
               )}
             />
           </CardContent>
-          <CardFooter>
+          <CardFooter className="flex-col gap-4">
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Start Interview
+              {isLoginView ? 'Login' : 'Sign Up'}
+            </Button>
+            <Button variant="link" type="button" onClick={() => setIsLoginView(!isLoginView)}>
+              {isLoginView ? 'Don\'t have an account? Sign Up' : 'Already have an account? Login'}
             </Button>
           </CardFooter>
         </form>

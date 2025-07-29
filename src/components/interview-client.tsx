@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { BrainCircuit, Loader2, Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react';
+import { BrainCircuit, Loader2, LogOut, Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -17,6 +17,7 @@ import { AiAvatar } from '@/components/ai-avatar';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from './ui/badge';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/use-auth';
 
 type Round = "Technical" | "Coding" | "HR";
 const ROUNDS: Round[] = ["Technical", "Coding", "HR"];
@@ -24,6 +25,7 @@ const QUESTIONS_PER_ROUND = { "Technical": 3, "Coding": 1, "HR": 2 };
 const USER_ROLE = "Software Engineer";
 
 export function InterviewClient() {
+  const { logout } = useAuth();
   const [round, setRound] = useState<Round>("Technical");
   const [questionCount, setQuestionCount] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState('');
@@ -106,6 +108,11 @@ export function InterviewClient() {
     } 
   }, [toast, startTypingEffect]);
 
+  useEffect(() => {
+    getNextQuestion([], 'Technical');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  
   const handleFinish = useCallback(async () => {
     setIsLoading(true);
     setIsFinished(true);
@@ -146,11 +153,6 @@ export function InterviewClient() {
     }
     await getNextQuestion(currentHistory, nextRound);
   }, [questionCount, round, handleFinish, getNextQuestion]);
-  
-  useEffect(() => {
-    getNextQuestion([], 'Technical');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     const getCameraPermission = async () => {
@@ -266,7 +268,6 @@ export function InterviewClient() {
     }
     setIsLoading(true);
 
-    // Capture expression before moving on
     await captureAndAnalyzeExpression();
 
     const newHistory = [...history, { question: currentQuestion, answer: userAnswer }];
@@ -348,7 +349,7 @@ export function InterviewClient() {
       <aside className="w-full md:w-1/3 lg:w-1/4 p-4 md:p-8 bg-card border-r flex flex-col items-center justify-center gap-6">
         <div className="flex items-center gap-2">
             <BrainCircuit className="h-8 w-8 text-primary" />
-            <h2 className="text-2xl font-bold text-primary font-headline">Elysian AI</h2>
+            <h2 className="text-2xl font-bold text-primary font-headline">AI Interviewer</h2>
         </div>
         
         <div className="relative">
@@ -376,6 +377,9 @@ export function InterviewClient() {
             </Button>
             <Button variant={isTTSEnabled ? "default" : "outline"} size="icon" onClick={() => setIsTTSEnabled(!isTTSEnabled)}>
               {isTTSEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+            </Button>
+            <Button variant="outline" size="icon" onClick={logout}>
+              <LogOut className="h-5 w-5" />
             </Button>
         </div>
         <p className={`text-sm text-muted-foreground mt-2 transition-opacity ${isListening ? 'opacity-100' : 'opacity-0'}`}>Listening...</p>

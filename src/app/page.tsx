@@ -7,7 +7,7 @@ export default function Home() {
       <div className="flex w-full max-w-4xl flex-col items-center gap-8 md:flex-row md:justify-between">
         <div className="flex flex-col items-center gap-4 text-center md:items-start md:text-left">
           <BrainCircuit className="h-16 w-16 text-primary" />
-          <h1 className="text-4xl font-bold text-primary font-headline md:text-5xl">Elysian Interviewer</h1>
+          <h1 className="text-4xl font-bold text-primary font-headline md:text-5xl">AI Interviewer</h1>
           <p className="max-w-md text-muted-foreground">
             Engage in a seamless, AI-driven interview experience. Our advanced AI will guide you through rounds, adapting to your responses for a truly personalized assessment.
           </p>
