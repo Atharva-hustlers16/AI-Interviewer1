@@ -30,7 +30,7 @@ export function InterviewClient() {
   const [displayedQuestion, setDisplayedQuestion] = useState('');
   const [userAnswer, setUserAnswer] = useState('');
   const [history, setHistory] = useState<{ question: string; answer: string }[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isFinished, setIsFinished] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState<{ correct: boolean, feedback: string, score: number } | null>(null);
   const [report, setReport] = useState<GenerateInterviewReportOutput | null>(null);
@@ -63,8 +63,7 @@ export function InterviewClient() {
       console.error('TTS Error:', error);
       toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive" });
       setIsSpeaking(false);
-    } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   }, [isTTSEnabled, toast]);
   
@@ -85,13 +84,13 @@ export function InterviewClient() {
     return () => clearInterval(intervalId);
   }, [speak]);
 
-  const getNextQuestion = useCallback(async (currentHistory: typeof history) => {
+  const getNextQuestion = useCallback(async (currentHistory: typeof history, currentRound: Round) => {
     setIsLoading(true);
     setEvaluationResult(null);
     try {
       const res = await generateInterviewQuestion({
         history: currentHistory,
-        interviewRound: round,
+        interviewRound: currentRound,
         userRole: USER_ROLE,
       });
       setCurrentQuestion(res.question);
@@ -100,10 +99,8 @@ export function InterviewClient() {
       console.error(error);
       toast({ title: "Error", description: "Could not generate a new question.", variant: "destructive" });
       setCurrentQuestion("I'm having trouble thinking of a question. Let's try submitting again.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [round, toast, startTypingEffect]);
+    } 
+  }, [toast, startTypingEffect]);
 
   const handleFinish = useCallback(async () => {
     setIsLoading(true);
@@ -115,7 +112,8 @@ export function InterviewClient() {
         expressionAnalysis: expressionAnalyses,
       });
       setReport(res);
-    } catch (error) {
+    } catch (error)
+{
       console.error(error);
       toast({ title: "Report Error", description: "Could not generate the final report.", variant: "destructive" });
     } finally {
@@ -124,27 +122,31 @@ export function InterviewClient() {
   }, [history, USER_ROLE, expressionAnalyses, toast]);
 
   const handleNextPhase = useCallback(async (currentHistory: typeof history) => {
+    let nextRound = round;
+    let nextQuestionCount = questionCount;
+
     if (questionCount + 1 >= QUESTIONS_PER_ROUND[round]) {
       const currentRoundIndex = ROUNDS.indexOf(round);
       if (currentRoundIndex + 1 < ROUNDS.length) {
-        setRound(ROUNDS[currentRoundIndex + 1]);
-        setQuestionCount(0);
+        nextRound = ROUNDS[currentRoundIndex + 1];
+        nextQuestionCount = 0;
+        setRound(nextRound);
+        setQuestionCount(nextQuestionCount);
       } else {
         await handleFinish();
+        return;
       }
     } else {
-      setQuestionCount(prev => prev + 1);
-      // getNextQuestion will be called by the useEffect watching `round` and `questionCount`
+      nextQuestionCount = questionCount + 1;
+      setQuestionCount(nextQuestionCount);
     }
-  }, [questionCount, round, handleFinish]);
+    await getNextQuestion(currentHistory, nextRound);
+  }, [questionCount, round, handleFinish, getNextQuestion]);
   
   useEffect(() => {
-    if(!isFinished) {
-      getNextQuestion(history);
-    }
-  // Omitting getNextQuestion and history from deps to prevent re-triggering on every interaction
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [round, questionCount, isFinished]);
+    getNextQuestion([], 'Technical');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 
   useEffect(() => {
@@ -179,7 +181,10 @@ export function InterviewClient() {
     getCameraPermission();
 
     if (audioRef.current) {
-      audioRef.current.onended = () => setIsSpeaking(false);
+      audioRef.current.onended = () => {
+        setIsSpeaking(false);
+        setIsLoading(false);
+      }
     }
   }, [toast]);
   
@@ -205,12 +210,9 @@ export function InterviewClient() {
 
     recognition.onresult = (event) => {
         let finalTranscript = '';
-        let interimTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
                 finalTranscript += event.results[i][0].transcript;
-            } else {
-                interimTranscript += event.results[i][0].transcript;
             }
         }
         setUserAnswer(prev => prev + finalTranscript);
@@ -275,7 +277,6 @@ export function InterviewClient() {
         try {
             const result = await evaluateCodeSolution({ code: userAnswer, problemDescription: currentQuestion });
             setEvaluationResult(result);
-            // After evaluation, user sees feedback, then clicks a button to continue.
         } catch (error) {
             console.error(error);
             toast({ title: "Evaluation Error", description: "Could not evaluate your solution.", variant: "destructive" });
@@ -284,7 +285,6 @@ export function InterviewClient() {
         }
     } else {
         await handleNextPhase(newHistory);
-        setIsLoading(false);
     }
   };
 
@@ -295,7 +295,11 @@ export function InterviewClient() {
   const totalRounds = ROUNDS.length;
   const currentRoundIndex = ROUNDS.indexOf(round);
   const questionsInCurrentRound = QUESTIONS_PER_ROUND[round];
-  const progress = (currentRoundIndex / totalRounds) * 100 + ((questionCount) / questionsInCurrentRound) * (100 / totalRounds);
+  
+  const completedRoundsProgress = (currentRoundIndex / totalRounds) * 100;
+  const currentRoundProgress = (questionCount / questionsInCurrentRound) * (100 / totalRounds);
+  const progress = completedRoundsProgress + currentRoundProgress;
+
 
   if (isFinished) {
     return (
@@ -380,7 +384,7 @@ export function InterviewClient() {
         <div className="flex-1 flex items-center justify-center">
         <Card className="w-full max-w-3xl shadow-lg">
           <CardHeader>
-            <CardTitle>Question {currentRoundIndex * 2 + questionCount + 1}</CardTitle>
+            <CardTitle>Question {history.length + 1}</CardTitle>
             <CardDescription className="min-h-[60px] text-lg text-foreground pt-2">
                 {displayedQuestion}
                 {isLoading && !displayedQuestion && <span className="animate-pulse">Thinking...</span>}
@@ -410,7 +414,7 @@ export function InterviewClient() {
                 </div>
             ) : (
                 <Button onClick={handleSubmit} disabled={isLoading || isAnalyzingExpression || isListening || isSpeaking || !userAnswer.trim()}>
-                    {isLoading || isAnalyzingExpression ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                    {(isLoading || isAnalyzingExpression) && !isSpeaking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                     Submit {round === 'Coding' ? 'Solution' : 'Answer'}
                 </Button>
             )}
@@ -421,3 +425,5 @@ export function InterviewClient() {
     </div>
   );
 }
+
+    
