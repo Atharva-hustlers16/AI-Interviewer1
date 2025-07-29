@@ -50,11 +50,11 @@ export function InterviewClient() {
 
   const speak = useCallback(async (text: string) => {
     if (!isTTSEnabled) {
-        setIsLoading(false);
-        return;
+      setIsLoading(false);
+      return;
     };
     
-    setIsLoading(true);
+    // setLoading(true) is called in getNextQuestion
     try {
       setIsSpeaking(true);
       const { audioDataUri } = await textToSpeech(text);
@@ -67,9 +67,9 @@ export function InterviewClient() {
       toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive" });
       setIsSpeaking(false);
       setIsLoading(false);
-    } 
+    }
   }, [isTTSEnabled, toast]);
-  
+
   const startTypingEffect = useCallback((text: string) => {
     setDisplayedQuestion('');
     let i = 0;
@@ -151,7 +151,6 @@ export function InterviewClient() {
     getNextQuestion([], 'Technical');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
 
   useEffect(() => {
     const getCameraPermission = async () => {
@@ -426,3 +425,5 @@ export function InterviewClient() {
     </div>
   );
 }
+
+    
