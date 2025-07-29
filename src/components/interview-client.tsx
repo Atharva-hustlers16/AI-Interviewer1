@@ -425,5 +425,3 @@ export function InterviewClient() {
     </div>
   );
 }
-
-    
