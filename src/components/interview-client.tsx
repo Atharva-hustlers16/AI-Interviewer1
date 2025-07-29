@@ -30,7 +30,7 @@ export function InterviewClient() {
   const [displayedQuestion, setDisplayedQuestion] = useState('');
   const [userAnswer, setUserAnswer] = useState('');
   const [history, setHistory] = useState<{ question: string; answer: string }[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState<{ correct: boolean, feedback: string, score: number } | null>(null);
   const [report, setReport] = useState<GenerateInterviewReportOutput | null>(null);
@@ -63,8 +63,7 @@ export function InterviewClient() {
       console.error('TTS Error:', error);
       toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive" });
       setIsSpeaking(false);
-      setIsLoading(false);
-    }
+    } 
   }, [isTTSEnabled, toast]);
   
   const startTypingEffect = useCallback((text: string) => {
@@ -113,13 +112,13 @@ export function InterviewClient() {
       });
       setReport(res);
     } catch (error)
-{
+    {
       console.error(error);
       toast({ title: "Report Error", description: "Could not generate the final report.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
-  }, [history, USER_ROLE, expressionAnalyses, toast]);
+  }, [history, expressionAnalyses, toast]);
 
   const handleNextPhase = useCallback(async (currentHistory: typeof history) => {
     let nextRound = round;
@@ -186,9 +185,7 @@ export function InterviewClient() {
         setIsLoading(false);
       }
     }
-  }, [toast]);
-  
-  useEffect(() => {
+
     if (!('webkitSpeechRecognition' in window)) {
         toast({ title: "Compatibility Error", description: "Speech recognition is not supported in your browser.", variant: "destructive" });
         return;
@@ -218,7 +215,7 @@ export function InterviewClient() {
         setUserAnswer(prev => prev + finalTranscript);
     };
   }, [toast]);
-
+  
   const toggleMic = () => {
     if (isListening) {
       recognitionRef.current?.stop();
@@ -425,5 +422,3 @@ export function InterviewClient() {
     </div>
   );
 }
-
-    
