@@ -24,8 +24,9 @@ import {
   CardFooter,
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
+import { Skeleton } from "./ui/skeleton";
 
 const formSchema = z.object({
   email: z.string().email({
@@ -40,6 +41,11 @@ export function LoginCard() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -63,6 +69,10 @@ export function LoginCard() {
       router.push("/interview");
       setIsLoading(false);
     }, 1000);
+  }
+
+  if (!isClient) {
+    return <Skeleton className="h-[440px] w-full" />;
   }
 
   return (
