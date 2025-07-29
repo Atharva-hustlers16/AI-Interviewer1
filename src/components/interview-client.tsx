@@ -49,7 +49,10 @@ export function InterviewClient() {
   const { toast } = useToast();
 
   const speak = useCallback(async (text: string) => {
-    if (!isTTSEnabled) return;
+    if (!isTTSEnabled) {
+        setIsLoading(false);
+        return;
+    };
     
     setIsLoading(true);
     try {
@@ -63,6 +66,7 @@ export function InterviewClient() {
       console.error('TTS Error:', error);
       toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive" });
       setIsSpeaking(false);
+      setIsLoading(false);
     } 
   }, [isTTSEnabled, toast]);
   
@@ -98,6 +102,7 @@ export function InterviewClient() {
       console.error(error);
       toast({ title: "Error", description: "Could not generate a new question.", variant: "destructive" });
       setCurrentQuestion("I'm having trouble thinking of a question. Let's try submitting again.");
+      setIsLoading(false);
     } 
   }, [toast, startTypingEffect]);
 
@@ -186,34 +191,33 @@ export function InterviewClient() {
       }
     }
 
-    if (!('webkitSpeechRecognition' in window)) {
-        toast({ title: "Compatibility Error", description: "Speech recognition is not supported in your browser.", variant: "destructive" });
-        return;
-    }
+    if ('webkitSpeechRecognition' in window) {
+        const SpeechRecognition = window.webkitSpeechRecognition;
+        recognitionRef.current = new SpeechRecognition();
+        const recognition = recognitionRef.current;
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
 
-    const SpeechRecognition = window.webkitSpeechRecognition;
-    recognitionRef.current = new SpeechRecognition();
-    const recognition = recognitionRef.current;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => { setIsListening(false); setIsMicOn(false); };
+        recognition.onerror = (event) => {
+          console.error('Speech recognition error', event.error);
+          toast({ title: "Mic Error", description: `An error occurred: ${event.error}`, variant: "destructive" });
+        };
 
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => { setIsListening(false); setIsMicOn(false); };
-    recognition.onerror = (event) => {
-      console.error('Speech recognition error', event.error);
-      toast({ title: "Mic Error", description: `An error occurred: ${event.error}`, variant: "destructive" });
-    };
-
-    recognition.onresult = (event) => {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
+        recognition.onresult = (event) => {
+            let finalTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript;
+                }
             }
-        }
-        setUserAnswer(prev => prev + finalTranscript);
-    };
+            setUserAnswer(prev => prev + finalTranscript);
+        };
+    } else {
+        toast({ title: "Compatibility Error", description: "Speech recognition is not supported in your browser.", variant: "destructive" });
+    }
   }, [toast]);
   
   const toggleMic = () => {

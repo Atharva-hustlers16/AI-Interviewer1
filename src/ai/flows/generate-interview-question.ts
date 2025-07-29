@@ -39,6 +39,7 @@ The current interview round is: {{{interviewRound}}}.
 
 Consider the entire interview history to ask relevant and follow-up questions. Avoid repeating questions.
 If the history is empty, start with an appropriate opening question for the round.
+If there is history, generate a follow-up question based on the candidate's last answer.
 
 Interview History:
 {{#each history}}
