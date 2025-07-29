@@ -12,6 +12,7 @@ import { generateInterviewQuestion } from '@/ai/flows/generate-interview-questio
 import { evaluateCodeSolution } from '@/ai/flows/evaluate-code-solution';
 import { analyzeFacialExpression } from '@/ai/flows/analyze-facial-expression';
 import { generateInterviewReport, GenerateInterviewReportOutput } from '@/ai/flows/generate-interview-report';
+import { textToSpeech } from '@/ai/flows/text-to-speech';
 import { AiAvatar } from '@/components/ai-avatar';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from './ui/badge';
@@ -42,18 +43,25 @@ export function InterviewClient() {
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const { toast } = useToast();
 
-  const speak = useCallback((text: string) => {
-    if (!isTTSEnabled || typeof window === 'undefined' || !window.speechSynthesis) return;
+  const speak = useCallback(async (text: string) => {
+    if (!isTTSEnabled) return;
     
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-  }, [isTTSEnabled]);
+    try {
+      setIsSpeaking(true);
+      const { audioDataUri } = await textToSpeech(text);
+      if (audioRef.current) {
+        audioRef.current.src = audioDataUri;
+        audioRef.current.play().catch(e => console.error("Audio play failed", e));
+      }
+    } catch (error) {
+      console.error('TTS Error:', error);
+      toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive" });
+      setIsSpeaking(false);
+    }
+  }, [isTTSEnabled, toast]);
   
   const startTypingEffect = useCallback((text: string) => {
     setDisplayedQuestion('');
@@ -144,6 +152,9 @@ export function InterviewClient() {
 
   useEffect(() => {
     setupWebcam();
+    if (audioRef.current) {
+      audioRef.current.onended = () => setIsSpeaking(false);
+    }
   }, [setupWebcam]);
   
   useEffect(() => {
@@ -286,6 +297,7 @@ export function InterviewClient() {
 
   return (
     <div className="flex min-h-screen w-full flex-col md:flex-row bg-gray-50 dark:bg-gray-900">
+      <audio ref={audioRef} className="hidden" />
       <aside className="w-full md:w-1/3 lg:w-1/4 p-8 bg-card border-r flex flex-col items-center justify-center gap-6">
         <div className="flex items-center gap-2">
             <BrainCircuit className="h-8 w-8 text-primary" />
