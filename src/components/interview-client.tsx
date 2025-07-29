@@ -16,6 +16,7 @@ import { textToSpeech } from '@/ai/flows/text-to-speech';
 import { AiAvatar } from '@/components/ai-avatar';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from './ui/badge';
+import { cn } from '@/lib/utils';
 
 type Round = "Technical" | "Coding" | "HR";
 const ROUNDS: Round[] = ["Technical", "Coding", "HR"];
@@ -420,5 +421,3 @@ export function InterviewClient() {
     </div>
   );
 }
-
-    
