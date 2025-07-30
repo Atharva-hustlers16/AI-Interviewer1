@@ -48,6 +48,7 @@ export function InterviewClient() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const typingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
   const speak = useCallback(async (text: string) => {
@@ -73,20 +74,24 @@ export function InterviewClient() {
   }, [isTTSEnabled, toast]);
 
   const startTypingEffect = useCallback((text: string) => {
+    if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+    }
     setDisplayedQuestion('');
     let i = 0;
-    const intervalId = setInterval(() => {
+    typingIntervalRef.current = setInterval(() => {
         setDisplayedQuestion(prev => {
             const nextChar = text[i];
             i++;
             if (i >= text.length) {
-                clearInterval(intervalId);
+                if (typingIntervalRef.current) {
+                    clearInterval(typingIntervalRef.current);
+                }
                 speak(text);
             }
             return prev + (nextChar || '');
         });
     }, 30);
-    return () => clearInterval(intervalId);
   }, [speak]);
 
   const getNextQuestion = useCallback(async (currentHistory: typeof history, currentRound: Round) => {
@@ -110,6 +115,12 @@ export function InterviewClient() {
 
   useEffect(() => {
     getNextQuestion([], 'Technical');
+    
+    return () => {
+        if (typingIntervalRef.current) {
+            clearInterval(typingIntervalRef.current);
+        }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
@@ -429,3 +440,5 @@ export function InterviewClient() {
     </div>
   );
 }
+
+    
