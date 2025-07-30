@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -38,7 +39,11 @@ const formSchema = z.object({
   }),
 });
 
-export function LoginCard() {
+interface LoginCardProps {
+  isAdminLogin?: boolean;
+}
+
+export function LoginCard({ isAdminLogin = false }: LoginCardProps) {
   const router = useRouter();
   const { toast } = useToast();
   const { user, signup, login } = useAuth();
@@ -46,15 +51,17 @@ export function LoginCard() {
   const [isLoginView, setIsLoginView] = useState(true);
   const [isClient, setIsClient] = useState(false);
 
+  const redirectPath = isAdminLogin ? "/admin/dashboard" : "/interview";
+
   useEffect(() => {
     setIsClient(true);
   }, []);
 
   useEffect(() => {
     if (user) {
-      router.push("/interview");
+      router.push(redirectPath);
     }
-  }, [user, router]);
+  }, [user, router, redirectPath]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -67,21 +74,15 @@ export function LoginCard() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     try {
-      if (isLoginView) {
-        await login(values.email, values.password);
-        toast({
-          title: "Login Successful",
-          description: "Redirecting to your interview...",
-        });
-        router.push("/interview");
-      } else {
-        await signup(values.email, values.password);
-        toast({
-          title: "Signup Successful",
-          description: "Redirecting to your interview...",
-        });
-        router.push("/interview");
-      }
+      const action = isLoginView ? login : signup;
+      await action(values.email, values.password);
+      
+      toast({
+        title: `${isLoginView ? 'Login' : 'Signup'} Successful`,
+        description: `Redirecting to ${isAdminLogin ? 'the admin dashboard...' : 'your interview...'}`,
+      });
+      router.push(redirectPath);
+
     } catch (error: any) {
       toast({
         title: "Authentication Error",
@@ -100,8 +101,8 @@ export function LoginCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{isLoginView ? 'Welcome Back' : 'Create an Account'}</CardTitle>
-        <CardDescription>{isLoginView ? 'Enter your credentials to access your interview.' : 'Sign up to begin your AI-powered interview experience.'}</CardDescription>
+        <CardTitle>{isLoginView ? (isAdminLogin ? 'Admin Login' : 'Welcome Back') : 'Create an Account'}</CardTitle>
+        <CardDescription>{isLoginView ? (isAdminLogin ? 'Enter your credentials to access the dashboard.' : 'Enter your credentials to access your interview.') : 'Sign up to begin your AI-powered interview experience.'}</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -138,7 +139,7 @@ export function LoginCard() {
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLoginView ? 'Login' : 'Sign Up'}
             </Button>
-            <Button variant="link" type="button" onClick={() => setIsLoginView(!isLoginView)}>
+            <Button variant="link" type="button" onClick={() => setIsLoginView(!isLoginView)} disabled={isAdminLogin && !isLoginView}>
               {isLoginView ? 'Don\'t have an account? Sign Up' : 'Already have an account? Login'}
             </Button>
           </CardFooter>
