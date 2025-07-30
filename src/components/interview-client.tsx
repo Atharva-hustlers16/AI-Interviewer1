@@ -107,14 +107,13 @@ export function InterviewClient() {
       startTypingEffect(res.question);
     } catch (error) {
       console.error(error);
-      toast({ title: "Error", description: "Could not generate a new question.", variant: "destructive" });
+      toast({ title: "Error Generating Question", description: "The AI is currently overloaded. Please try submitting again.", variant: "destructive" });
       setCurrentQuestion("I'm having trouble thinking of a question. Let's try submitting again.");
       setIsLoading(false);
     } 
   }, [toast, startTypingEffect]);
 
   useEffect(() => {
-    // This effect runs only once on mount to fetch the initial question.
     const fetchInitialQuestion = async () => {
         setIsLoading(true);
         try {
@@ -127,7 +126,7 @@ export function InterviewClient() {
             startTypingEffect(res.question);
         } catch (error) {
             console.error(error);
-            toast({ title: "Error", description: "Could not generate the first question.", variant: "destructive" });
+            toast({ title: "Error Generating Question", description: "The AI is currently overloaded. Please refresh to try again.", variant: "destructive" });
             setCurrentQuestion("I'm having trouble thinking of a question. Please refresh the page to try again.");
             setIsLoading(false);
         }
@@ -323,7 +322,6 @@ export function InterviewClient() {
         } catch (error) {
             console.error(error);
             toast({ title: "Evaluation Error", description: "Could not evaluate your solution. The AI model may be overloaded. You can continue to the next round.", variant: "destructive" });
-            // Let user continue even if evaluation fails
             setEvaluationResult({
               correct: false,
               feedback: "Sorry, the AI evaluator is currently unavailable. Please continue to the next question.",
