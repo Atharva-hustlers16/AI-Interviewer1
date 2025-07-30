@@ -18,6 +18,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from './ui/badge';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
+import { db } from '@/lib/firebase';
+import { collection, addDoc } from 'firebase/firestore';
 
 type Round = "Technical" | "Coding" | "HR";
 const ROUNDS: Round[] = ["Technical", "Coding", "HR"];
@@ -25,7 +27,7 @@ const QUESTIONS_PER_ROUND = { "Technical": 3, "Coding": 1, "HR": 2 };
 const USER_ROLE = "Software Engineer";
 
 export function InterviewClient() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [round, setRound] = useState<Round>("Technical");
   const [questionCount, setQuestionCount] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState('');
@@ -126,12 +128,24 @@ export function InterviewClient() {
     setIsLoading(true);
     setIsFinished(true);
     try {
-      const res = await generateInterviewReport({
+      const reportData = await generateInterviewReport({
         history,
         userRole: USER_ROLE,
         expressionAnalysis: expressionAnalyses,
       });
-      setReport(res);
+      setReport(reportData);
+
+      if (user) {
+        await addDoc(collection(db, "interviews"), {
+            userId: user.uid,
+            userEmail: user.email,
+            report: reportData,
+            history,
+            expressionAnalyses,
+            createdAt: new Date(),
+        });
+      }
+
     } catch (error)
     {
       console.error(error);
@@ -139,7 +153,7 @@ export function InterviewClient() {
     } finally {
       setIsLoading(false);
     }
-  }, [history, expressionAnalyses, toast]);
+  }, [history, expressionAnalyses, toast, user]);
 
   const handleNextPhase = useCallback(async (currentHistory: typeof history) => {
     let nextRound = round;
@@ -438,7 +452,3 @@ export function InterviewClient() {
     </div>
   );
 }
-
-    
-
-    
