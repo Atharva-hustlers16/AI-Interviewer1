@@ -80,17 +80,15 @@ export function InterviewClient() {
     setDisplayedQuestion('');
     let i = 0;
     typingIntervalRef.current = setInterval(() => {
-        setDisplayedQuestion(prev => {
-            const nextChar = text[i];
+        if (i < text.length) {
+            setDisplayedQuestion(prev => prev + text[i]);
             i++;
-            if (i >= text.length) {
-                if (typingIntervalRef.current) {
-                    clearInterval(typingIntervalRef.current);
-                }
-                speak(text);
+        } else {
+            if (typingIntervalRef.current) {
+                clearInterval(typingIntervalRef.current);
             }
-            return prev + (nextChar || '');
-        });
+            speak(text);
+        }
     }, 30);
   }, [speak]);
 
@@ -440,5 +438,7 @@ export function InterviewClient() {
     </div>
   );
 }
+
+    
 
     
