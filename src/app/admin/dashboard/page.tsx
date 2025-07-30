@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { LogOut, Loader2 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
@@ -46,7 +46,14 @@ export default function AdminDashboardPage() {
           const querySnapshot = await getDocs(q);
           const fetchedReports: InterviewReport[] = [];
           querySnapshot.forEach((doc) => {
-            fetchedReports.push({ id: doc.id, ...doc.data() } as InterviewReport);
+            const data = doc.data();
+            // Ensure createdAt is a Firestore Timestamp
+            const reportData = { 
+              id: doc.id, 
+              ...data,
+              createdAt: data.createdAt instanceof Timestamp ? data.createdAt : new Timestamp(data.createdAt.seconds, data.createdAt.nanoseconds)
+            } as InterviewReport;
+            fetchedReports.push(reportData);
           });
           setReports(fetchedReports);
         } catch (error) {
@@ -104,7 +111,7 @@ export default function AdminDashboardPage() {
                   {reports.map((report) => (
                     <TableRow key={report.id}>
                       <TableCell>{report.userEmail}</TableCell>
-                      <TableCell>{new Date(report.createdAt.seconds * 1000).toLocaleDateString()}</TableCell>
+                      <TableCell>{report.createdAt && new Date(report.createdAt.seconds * 1000).toLocaleDateString()}</TableCell>
                       <TableCell className="max-w-xs truncate">{report.report.overallAssessment}</TableCell>
                       <TableCell className="text-right">
                         <Dialog>
@@ -115,7 +122,7 @@ export default function AdminDashboardPage() {
                             <DialogHeader>
                               <DialogTitle>Interview Report for {report.userEmail}</DialogTitle>
                               <DialogDescription>
-                                Completed on {new Date(report.createdAt.seconds * 1000).toLocaleString()}
+                                Completed on {report.createdAt && new Date(report.createdAt.seconds * 1000).toLocaleString()}
                               </DialogDescription>
                             </DialogHeader>
                             <div className="space-y-6 py-4">

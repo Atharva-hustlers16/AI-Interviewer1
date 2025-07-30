@@ -19,7 +19,7 @@ import { Badge } from './ui/badge';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
 import { db } from '@/lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 type Round = "Technical" | "Coding" | "HR";
 const ROUNDS: Round[] = ["Technical", "Coding", "HR"];
@@ -108,6 +108,7 @@ export function InterviewClient() {
     } catch (error) {
       console.error(error);
       toast({ title: "Error Generating Question", description: "The AI is currently overloaded. Please try submitting again.", variant: "destructive" });
+      setDisplayedQuestion("I'm having trouble thinking of a question. Let's try submitting again.");
       setCurrentQuestion("I'm having trouble thinking of a question. Let's try submitting again.");
       setIsLoading(false);
     } 
@@ -127,6 +128,7 @@ export function InterviewClient() {
         } catch (error) {
             console.error(error);
             toast({ title: "Error Generating Question", description: "The AI is currently overloaded. Please refresh to try again.", variant: "destructive" });
+            setDisplayedQuestion("I'm having trouble thinking of a question. Please refresh the page to try again.");
             setCurrentQuestion("I'm having trouble thinking of a question. Please refresh the page to try again.");
             setIsLoading(false);
         }
@@ -160,7 +162,7 @@ export function InterviewClient() {
             report: reportData,
             history,
             expressionAnalyses,
-            createdAt: new Date(),
+            createdAt: serverTimestamp(),
         });
       }
 
@@ -477,3 +479,4 @@ export function InterviewClient() {
 }
 
     
+
